@@ -14,13 +14,12 @@
             [clojure.tools.nrepl.middleware :refer [set-descriptor!]]
             [clojure.tools.nrepl.middleware.interruptible-eval :as ie]
             [clojure.tools.nrepl.middleware.session :as session])
-  (:import [java.io PrintWriter Writer]))
+  (:import [java.io PrintWriter Writer PrintStream OutputStream]))
 
 ;;; OutStream
 (defonce original-out *out*)
 (defonce original-err *err*)
 
-(declare tracked-sessions-map)
 (declare unsubscribe-session)
 
 (defmacro with-out-binding
@@ -64,6 +63,27 @@
                       (.flush printer))))
                 true))
 
+(defn forking-stream
+  "Returns a PrintStream suitable for binding as java.lang.System/out
+  or java.lang.System/err. All operations are forwarded to all output
+  bindings in the sessions of messages in addition to the server's
+  usual PrintWriter (saved in `original-out` or `original-err`).
+  type is either :out or :err."
+  [messages type]
+  (PrintStream. (proxy [OutputStream] []
+                  (close [] (.flush ^OutputStream this))
+                  (write
+                    ([b]
+                     (with-out-binding [printer messages type]
+                       (.write printer (String. b))))
+                    ([b ^Integer off ^Integer len]
+                     (with-out-binding [printer messages type]
+                       (.write printer (String. b) off len))))
+                  (flush []
+                    (with-out-binding [printer messages type]
+                      (.flush printer))))
+                true))
+
 ;;; Known eval sessions
 (def tracked-sessions-map
   "Map from session ids to eval `*msg*`s.
@@ -71,12 +91,15 @@
   (atom {}))
 
 (defn tracked-sessions-map-watch [_ _ _ new-state]
-  (let [o (forking-printer (vals new-state) :out)]
+  (let [o (forking-printer (vals new-state) :out)
+        s (forking-stream (vals new-state) :out)]
     ;; FIXME: This won't apply to Java loggers unless we also
     ;; `setOut`, but for that we need to convert a `PrintWriter` to a
     ;; `PrintStream` (or maybe just not use a `PrintWriter` above).
     ;; (System/setOut (PrintStream. o))
-    (alter-var-root #'*out* (constantly o))))
+    (alter-var-root #'*out* (constantly o))
+    (System/setOut s)
+    (System/setErr s)))
 
 (add-watch tracked-sessions-map :update-out tracked-sessions-map-watch)
 
