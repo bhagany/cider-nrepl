@@ -42,27 +42,6 @@
                 (catch Exception ~'e
                   (unsubscribe-session ~'session)))))))
 
-(defn forking-printer
-  "Returns a PrintWriter suitable for binding as *out* or *err*. All
-  operations are forwarded to all output bindings in the sessions of
-  messages in addition to the server's usual PrintWriter (saved in
-  `original-out` or `original-err`).
-  type is either :out or :err."
-  [messages type]
-  (PrintWriter. (proxy [Writer] []
-                  (close [] (.flush ^Writer this))
-                  (write
-                    ([x]
-                     (with-out-binding [printer messages type]
-                       (.write printer x)))
-                    ([x ^Integer off ^Integer len]
-                     (with-out-binding [printer messages type]
-                       (.write printer x off len))))
-                  (flush []
-                    (with-out-binding [printer messages type]
-                      (.flush printer))))
-                true))
-
 (defn forking-stream
   "Returns a PrintStream suitable for binding as java.lang.System/out
   or java.lang.System/err. All operations are forwarded to all output
@@ -91,13 +70,9 @@
   (atom {}))
 
 (defn tracked-sessions-map-watch [_ _ _ new-state]
-  (let [o (forking-printer (vals new-state) :out)
-        s (forking-stream (vals new-state) :out)]
-    ;; FIXME: This won't apply to Java loggers unless we also
-    ;; `setOut`, but for that we need to convert a `PrintWriter` to a
-    ;; `PrintStream` (or maybe just not use a `PrintWriter` above).
-    ;; (System/setOut (PrintStream. o))
-    (alter-var-root #'*out* (constantly o))
+  (let [s (forking-stream (vals new-state) :out)
+        w (PrintWriter. s)]
+    (alter-var-root #'*out* (constantly w))
     (System/setOut s)
     (System/setErr s)))
 
