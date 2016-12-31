@@ -63,40 +63,6 @@
                       (.flush printer))))
                 true))
 
-(defn out-stream
-  "Returns a PrintStream suitable for binding as java.lang.System/out.
-  All operations are forwarded to all output bindings in the sessions
-  of messages in addition to the server's usual PrintWriter (saved in
-  `original-out`)."
-  []
-  (PrintStream. (proxy [OutputStream] []
-                  (close [] (.flush ^OutputStream this))
-                  (write
-                    ([b]
-                     (.write *out* (String. b)))
-                    ([b ^Integer off ^Integer len]
-                     (.write *out* (String. b) off len)))
-                  (flush []
-                    (.flush *out*)))
-                true))
-
-(defn err-stream
-  "Returns a PrintStream suitable for binding as java.lang.System/err.
-  All operations are forwarded to all output bindings in the sessions
-  of messages in addition to the server's usual PrintWriter (saved in
-  `original-err`)."
-  []
-  (PrintStream. (proxy [OutputStream] []
-                  (close [] (.flush ^OutputStream this))
-                  (write
-                    ([b]
-                     (.write *err* (String. b)))
-                    ([b ^Integer off ^Integer len]
-                     (.write *err* (String. b) off len)))
-                  (flush []
-                    (.flush *err*)))
-                true))
-
 (defn print-stream
   "Returns a PrintStream suitable for binding as java.lang.System/out
   or java.lang.System/err. All operations are forwarded to all output
@@ -105,17 +71,17 @@
   type is either :out or :err."
   [type]
   (let [printer (case type
-                  :out *out*
-                  :err *err*)]
+                  :out '*out*
+                  :err '*err*)]
     (PrintStream. (proxy [OutputStream] []
                     (close [] (.flush ^OutputStream this))
                     (write
                       ([b]
-                       (.write printer (String. b)))
+                       (.write @(resolve printer) (String. b)))
                       ([b ^Integer off ^Integer len]
-                       (.write printer (String. b) off len)))
+                       (.write @(resolve printer) (String. b) off len)))
                     (flush []
-                      (.flush printer)))
+                      (.flush @(resolve printer))))
                   true)))
 
 ;;; Known eval sessions
@@ -129,8 +95,8 @@
         ew (forking-printer (vals new-state) :err)]
     (alter-var-root #'*out* (constantly ow))
     (alter-var-root #'*err* (constantly ew))
-    (System/setOut (out-stream) #_(print-stream :out))
-    (System/setErr (err-stream) #_(print-stream :err))))
+    (System/setOut (print-stream :out))
+    (System/setErr (print-stream :err))))
 
 (add-watch tracked-sessions-map :update-out tracked-sessions-map-watch)
 
